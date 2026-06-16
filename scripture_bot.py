@@ -5,7 +5,6 @@ import sys
 import difflib
 import logging
 
-# ── Logging setup (shows in Railway logs) ──────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -16,14 +15,12 @@ logger = logging.getLogger(__name__)
 logger.info("=== Scripture Bot starting ===")
 logger.info(f"Python version: {sys.version}")
 
-# ── Validate token BEFORE importing telegram ──────────────────────────────
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 if not TOKEN:
     logger.error("TELEGRAM_BOT_TOKEN is not set or is empty. Exiting.")
     sys.exit(1)
 logger.info(f"Token found: {TOKEN[:10]}...")
 
-# ── Import telegram library ───────────────────────────────────────────────
 try:
     from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
     from telegram.ext import (
@@ -34,7 +31,6 @@ try:
     logger.info("python-telegram-bot imported successfully.")
 except ImportError as e:
     logger.error(f"Import failed: {e}")
-    logger.error("Make sure requirements.txt contains: python-telegram-bot==21.3")
     sys.exit(1)
 
 # ─────────────────────────────────────────────
@@ -87,68 +83,109 @@ VERSES = [
 ]
 
 # ─────────────────────────────────────────────
-#  Diff / compare helpers
+#  Normalisation helpers
 # ─────────────────────────────────────────────
-def tokenise(text: str):
+def strip_punct_for_compare(word: str) -> str:
+    """
+    Remove ALL punctuation EXCEPT:
+      - hyphens/dashes inside words  (e.g. "criminal's" dash, em-dash in verse 4)
+      - quotes are normalised (both ' and " map to nothing — quotes OK either way)
+    Colons and semicolons are KEPT so "written:" vs "written" is a mismatch only
+    when the colon is structurally significant. Actually per spec, inverted commas
+    (quotes) are both fine; punctuation like comma/period ignored.
+    Strategy:
+      1. Normalise quote characters (', ", ', ", ‛, ‟) → removed
+      2. Keep hyphens and em-dashes
+      3. Remove all other punctuation (commas, periods, semicolons, colons, etc.)
+      4. Lowercase
+    """
+    # Normalise all quote variants to empty
+    w = re.sub(r'["\u2018\u2019\u201c\u201d\u201a\u201b\u201e\u201f\']', "", word)
+    # Keep letters, digits, hyphens, em-dash (\u2014), en-dash (\u2013)
+    w = re.sub(r"[^a-zA-Z0-9\-\u2013\u2014]", "", w)
+    return w.lower()
+
+def tokenise(text: str) -> list:
     return text.split()
 
-def normalise(word: str) -> str:
-    return re.sub(r"[^a-z0-9'\-]", "", word.lower())
-
 def escape_md(text: str) -> str:
+    """Escape special chars for Telegram MarkdownV2."""
     special = r"\_*[]()~`>#+-=|{}.!"
-    return re.sub(r"([" + re.escape(special) + r"])", r"\\\1", text)
+    return re.sub(r"([" + re.escape(special) + r"])", r"\", text)
 
+# ─────────────────────────────────────────────
+#  Diff engine
+# ─────────────────────────────────────────────
 def compare_verses(reference: str, attempt: str):
+    """
+    Returns (annotated_mkdv2, stats)
+
+    Legend:
+      Normal text     = correct
+      ~~strikethrough~~ = your wrong/extra word(s)   ← what YOU typed (wrong)
+      __underline__   = correct word                 ← what it SHOULD be
+      *[word]*        = missing word (you skipped it)
+    """
     ref_tokens = tokenise(reference)
     att_tokens = tokenise(attempt)
-    matcher = difflib.SequenceMatcher(
-        None,
-        [normalise(w) for w in ref_tokens],
-        [normalise(w) for w in att_tokens],
-        autojunk=False,
-    )
+
+    ref_norm = [strip_punct_for_compare(w) for w in ref_tokens]
+    att_norm = [strip_punct_for_compare(w) for w in att_tokens]
+
+    matcher = difflib.SequenceMatcher(None, ref_norm, att_norm, autojunk=False)
+
     stats = {"correct": 0, "total": len(ref_tokens),
              "missing": 0, "wrong": 0, "extra": 0}
     parts = []
+
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
             for w in ref_tokens[i1:i2]:
                 parts.append(escape_md(w))
             stats["correct"] += i2 - i1
+
         elif tag == "replace":
-            for w in ref_tokens[i1:i2]:
-                parts.append(f"~{escape_md(w)}~")
-            for w in att_tokens[j1:j2]:
-                parts.append(f"__{escape_md(w)}__")
+            # Show: ~~your wrong words~~ then __correct words__
+            wrong_words = " ".join(escape_md(w) for w in att_tokens[j1:j2])
+            correct_words = " ".join(escape_md(w) for w in ref_tokens[i1:i2])
+            parts.append(f"~{wrong_words}~")       # strikethrough = what you typed
+            parts.append(f"__{correct_words}__")   # underline = correct word
             stats["wrong"] += i2 - i1
+
         elif tag == "delete":
+            # Words you missed entirely
             for w in ref_tokens[i1:i2]:
                 parts.append(f"*\[{escape_md(w)}\]*")
             stats["missing"] += i2 - i1
+
         elif tag == "insert":
-            for w in att_tokens[j1:j2]:
-                parts.append(f"_{escape_md(w)}_")
+            # Extra words you added — strikethrough only (no underline pair)
+            extra_words = " ".join(escape_md(w) for w in att_tokens[j1:j2])
+            parts.append(f"~{extra_words}~")
             stats["extra"] += j2 - j1
-    return " ".join(parts), stats
+
+    annotated = " ".join(parts)
+    return annotated, stats
+
 
 def legend() -> str:
     return (
-        "\n*Legend:*\n"
         "Normal text \= correct\n"
-        "~strikethrough~ \= correct word\n"
-        "__underline__ \= your wrong word\n"
-        "*\[word\]* \= missing word\n"
-        "_italic_ \= extra word"
+        "~strikethrough~ \= your wrong / extra word\n"
+        "__underline__ \= correct word\n"
+        "*\[word\]* \= missing word"
     )
+
 
 def build_feedback(ref: str, attempt: str, verse_ref: str) -> str:
     annotated, stats = compare_verses(ref, attempt)
     pct = round(stats["correct"] / max(stats["total"], 1) * 100)
     emoji = "🎉" if pct == 100 else "💪" if pct >= 70 else "📖"
+
     header = f"{emoji} *{escape_md(verse_ref)}*\n\n"
+
     score_line = (
-        f"\n\n*Score:* {pct}% "
+        f"*Score:* {pct}% "
         f"\({stats['correct']}/{stats['total']} words\)"
     )
     if stats["wrong"]:
@@ -157,7 +194,12 @@ def build_feedback(ref: str, attempt: str, verse_ref: str) -> str:
         score_line += f" \| {stats['missing']} missing"
     if stats["extra"]:
         score_line += f" \| {stats['extra']} extra"
-    return header + annotated + score_line + legend()
+
+    # One blank line between score and legend
+    legend_block = f"*Legend:*\n{legend()}"
+
+    return header + annotated + "\n\n" + score_line + "\n\n" + legend_block
+
 
 # ─────────────────────────────────────────────
 #  Handlers
@@ -199,6 +241,7 @@ async def callback_verse(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text.strip()
     ud = ctx.user_data
+
     if "queue" in ud and ud["queue"]:
         verse_id = ud["queue"][0]
         verse = next(v for v in VERSES if v["id"] == verse_id)
@@ -222,6 +265,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             ud.clear()
         return
+
     if "active_verse" in ud:
         verse_id = ud.pop("active_verse")
         verse = next(v for v in VERSES if v["id"] == verse_id)
@@ -236,53 +280,5 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
         return
-    await update.message.reply_text(
-        "Use /quiz to pick a verse or /all to go through all 5\.",
-        parse_mode=ParseMode.MARKDOWN_V2,
-    )
 
-async def callback_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == "menu_quiz":
-        keyboard = [
-            [InlineKeyboardButton(v["ref"], callback_data=f"verse_{v['id']}")]
-            for v in VERSES
-        ]
-        await query.message.reply_text(
-            "Choose a verse:",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-
-async def send_next_verse(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    ud = ctx.user_data
-    verse_id = ud["queue"][0]
-    verse = next(v for v in VERSES if v["id"] == verse_id)
-    remaining = len(ud["queue"])
-    current = len(VERSES) - remaining + 1
-    msg = (
-        f"📝 *Verse {current}/{len(VERSES)}: {escape_md(verse['ref'])}*\n\n"
-        "Type the verse from memory:"
-    )
-    if hasattr(update, "callback_query") and update.callback_query:
-        await update.callback_query.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
-    else:
-        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
-
-# ─────────────────────────────────────────────
-#  Main
-# ─────────────────────────────────────────────
-def main():
-    logger.info("Building application...")
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("quiz", cmd_quiz))
-    app.add_handler(CommandHandler("all", cmd_all))
-    app.add_handler(CallbackQueryHandler(callback_verse, pattern=r"^verse_"))
-    app.add_handler(CallbackQueryHandler(callback_menu, pattern=r"^menu_"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.run_polling()
-
-
-if __name__ == "__main__":
-    main()
+    await update.message.reply_text("I didn't understand that command.")
