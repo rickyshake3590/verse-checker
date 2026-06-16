@@ -122,19 +122,26 @@ VERSES = [
 # ─────────────────────────────────────────────
 #  Difficulty helpers
 # ─────────────────────────────────────────────
-BLANK = "\\_\\_\\_\\_\\_"   # MarkdownV2-safe underline blank
+BLANK = "\\_\\_\\_\\_\\_"
 
 LEVEL_LABELS = {
-    1: "🟢 Level 1 — Fill in ~1/3",
-    2: "🟡 Level 2 — Fill in ~2/3",
-    3: "🔴 Level 3 — Full recall (no hints)",
+    1: "🟢 Level 1 \u2014 Fill in ~1/3",
+    2: "🟡 Level 2 \u2014 Fill in ~2/3",
+    3: "🔴 Level 3 \u2014 Full recall (no hints)",
 }
 
-def make_cloze(text: str, level: int) -> tuple[str, list[int]]:
+# Splits a token like  "heart;"  into  ("", "heart", ";")
+#                      '"It'     into  ('"', "It",    "")
+_TOKEN_RE = re.compile(r'^([^a-zA-Z0-9]*)(.*?)([^a-zA-Z0-9]*)$', re.DOTALL)
+
+def make_cloze(text: str, level: int) -> tuple:
     """
-    Returns (cloze_text_for_display, blanked_indices).
-    level 1 → ~33% blanked, level 2 → ~67% blanked, level 3 → full blank (no cloze shown).
-    Words are chosen randomly; consecutive blanks are allowed.
+    Returns (cloze_markdown, blanked_indices).
+    Only the alphabetic/numeric part of each token is replaced with _____.
+    Leading/trailing punctuation (commas, quotes, semicolons, dashes…) stays visible.
+    e.g.  "heart;"  → "_____;"
+          '"It'     → '"_____'
+          'love\u2014' → '_____\u2014'
     """
     tokens = text.split()
     n = len(tokens)
@@ -144,7 +151,7 @@ def make_cloze(text: str, level: int) -> tuple[str, list[int]]:
     elif level == 2:
         target = max(1, round(n * 0.67))
     else:
-        return "", list(range(n))   # level 3: nothing shown
+        return "", list(range(n))   # level 3: caller shows nothing
 
     blanked = sorted(random.sample(range(n), target))
     blanked_set = set(blanked)
@@ -152,7 +159,10 @@ def make_cloze(text: str, level: int) -> tuple[str, list[int]]:
     parts = []
     for i, word in enumerate(tokens):
         if i in blanked_set:
-            parts.append(BLANK)
+            m = _TOKEN_RE.match(word)
+            lead  = escape_md(m.group(1)) if m else ""
+            trail = escape_md(m.group(3)) if m else ""
+            parts.append(f"{lead}{BLANK}{trail}")
         else:
             parts.append(escape_md(word))
 
@@ -160,7 +170,7 @@ def make_cloze(text: str, level: int) -> tuple[str, list[int]]:
 
 
 # ─────────────────────────────────────────────
-#  Normalisation helpers
+#  Normalisation / diff helpers
 # ─────────────────────────────────────────────
 def strip_punct_for_compare(word: str) -> str:
     w = re.sub(r'["\'\\u2018\\u2019\\u201c\\u201d\\u201a\\u201b\\u201e\\u201f]', "", word)
@@ -174,9 +184,6 @@ def escape_md(text: str) -> str:
     special = r"\_*[]()~`>#+-=|{}.!"
     return re.sub(r"([" + re.escape(special) + r"])", r"\\\1", text)
 
-# ─────────────────────────────────────────────
-#  Diff engine (full verse comparison)
-# ─────────────────────────────────────────────
 def compare_verses(reference: str, attempt: str):
     ref_tokens = tokenise(reference)
     att_tokens = tokenise(attempt)
@@ -207,14 +214,12 @@ def compare_verses(reference: str, attempt: str):
             stats["extra"] += j2 - j1
     return " ".join(parts), stats
 
-
 def legend() -> str:
     return (
         "~strikethrough~ \\= your wrong / extra word or words\n"
         "__underline__ \\= correct word or words\n"
         "*\\[word\\]* \\= missing word or words"
     )
-
 
 def build_feedback(ref: str, attempt: str, verse_ref: str) -> str:
     annotated, stats = compare_verses(ref, attempt)
@@ -247,7 +252,6 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
-
 async def cmd_quiz(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton(v["ref"], callback_data=f"verse_{v['id']}")]
@@ -258,16 +262,12 @@ async def cmd_quiz(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
-
 async def cmd_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data["queue"] = [v["id"] for v in VERSES]
     ctx.user_data["scores"] = []
-    # Ask for difficulty before starting
     await ask_difficulty(update, ctx, origin="all")
 
-
 async def ask_difficulty(update: Update, ctx: ContextTypes.DEFAULT_TYPE, origin: str = "single"):
-    """Send a difficulty selection keyboard. origin = 'single' | 'all'"""
     ctx.user_data["difficulty_origin"] = origin
     keyboard = [
         [InlineKeyboardButton("🟢 Level 1 — Fill in ~1/3 of words", callback_data="diff_1")],
@@ -280,65 +280,53 @@ async def ask_difficulty(update: Update, ctx: ContextTypes.DEFAULT_TYPE, origin:
         "🟡 *Level 2* — Fill in \\~2/3 of the verse\n"
         "🔴 *Level 3* — Entire verse hidden, type it all from memory"
     )
-    if hasattr(update, "callback_query") and update.callback_query:
-        await update.callback_query.message.reply_text(
-            msg, parse_mode=ParseMode.MARKDOWN_V2,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    else:
-        await update.message.reply_text(
-            msg, parse_mode=ParseMode.MARKDOWN_V2,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
+    target = (update.callback_query.message
+              if hasattr(update, "callback_query") and update.callback_query
+              else update.message)
+    await target.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2,
+                            reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def callback_verse(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """User selected a verse — now ask difficulty."""
     query = update.callback_query
     await query.answer()
     verse_id = int(query.data.split("_")[1])
     ctx.user_data["active_verse"] = verse_id
     await ask_difficulty(update, ctx, origin="single")
 
-
 async def callback_difficulty(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """User selected a difficulty level."""
     query = update.callback_query
     await query.answer()
     level = int(query.data.split("_")[1])
     ctx.user_data["level"] = level
     origin = ctx.user_data.get("difficulty_origin", "single")
-
     if origin == "all":
         await send_next_verse(update, ctx)
     else:
         verse_id = ctx.user_data.get("active_verse")
         if not verse_id:
-            await query.message.reply_text("Something went wrong\\. Use /quiz to start again\\.",
-                                           parse_mode=ParseMode.MARKDOWN_V2)
+            await query.message.reply_text(
+                "Something went wrong\\. Use /quiz to start again\\.",
+                parse_mode=ParseMode.MARKDOWN_V2)
             return
         await send_verse_prompt(query.message, verse_id, level)
 
-
-async def send_verse_prompt(message, verse_id: int, level: int):
-    """Send the verse prompt (cloze or blank) to the user."""
+async def send_verse_prompt(message, verse_id: int, level: int, prefix: str = ""):
     verse = next(v for v in VERSES if v["id"] == verse_id)
     level_label = escape_md(LEVEL_LABELS[level])
-
+    ref = escape_md(verse["ref"])
     if level == 3:
-        prompt = (
-            f"📝 *{escape_md(verse['ref'])}* \\| {level_label}\n\n"
-            "Type the entire verse from memory:"
+        body = "Type the entire verse from memory:"
+        await message.reply_text(
+            f"{prefix}📝 *{ref}* \\| {level_label}\n\n{body}",
+            parse_mode=ParseMode.MARKDOWN_V2,
         )
     else:
         cloze, _ = make_cloze(verse["text"], level)
-        prompt = (
-            f"📝 *{escape_md(verse['ref'])}* \\| {level_label}\n\n"
-            f"{cloze}\n\n"
-            "Fill in the blanks \\— type the *complete verse*:"
+        body = "Fill in the blanks \\— type the *complete verse*:"
+        await message.reply_text(
+            f"{prefix}📝 *{ref}* \\| {level_label}\n\n{cloze}\n\n{body}",
+            parse_mode=ParseMode.MARKDOWN_V2,
         )
-    await message.reply_text(prompt, parse_mode=ParseMode.MARKDOWN_V2)
-
 
 async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text.strip()
@@ -351,6 +339,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pct = round(stats["correct"] / max(stats["total"], 1) * 100)
         ud["scores"].append(pct)
         ud["queue"].pop(0)
+        ud.pop("active_verse", None)
         feedback = build_feedback(verse["text"], user_text, verse["ref"])
         await update.message.reply_text(feedback, parse_mode=ParseMode.MARKDOWN_V2)
         if ud["queue"]:
@@ -370,12 +359,13 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if "active_verse" in ud:
         verse_id = ud.pop("active_verse")
+        level = ud.get("level", 3)
         verse = next(v for v in VERSES if v["id"] == verse_id)
         feedback = build_feedback(verse["text"], user_text, verse["ref"])
         await update.message.reply_text(feedback, parse_mode=ParseMode.MARKDOWN_V2)
         keyboard = [
             [InlineKeyboardButton("Try again (same level)",
-                                  callback_data=f"retry_{verse_id}_{ud.get('level', 3)}")],
+                                  callback_data=f"retry_{verse_id}_{level}")],
             [InlineKeyboardButton("Try again (change level)",
                                   callback_data=f"verse_{verse_id}")],
             [InlineKeyboardButton("Pick another verse", callback_data="menu_quiz")],
@@ -391,18 +381,15 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
-
 async def callback_retry(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Retry same verse at same level."""
     query = update.callback_query
     await query.answer()
-    _, verse_id_str, level_str = query.data.split("_")
-    verse_id = int(verse_id_str)
-    level = int(level_str)
+    parts = query.data.split("_")
+    verse_id = int(parts[1])
+    level = int(parts[2])
     ctx.user_data["active_verse"] = verse_id
     ctx.user_data["level"] = level
     await send_verse_prompt(query.message, verse_id, level)
-
 
 async def callback_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -417,37 +404,18 @@ async def callback_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
-
 async def send_next_verse(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ud = ctx.user_data
     verse_id = ud["queue"][0]
     level = ud.get("level", 3)
+    ud["active_verse"] = verse_id
     remaining = len(ud["queue"])
     current = len(VERSES) - remaining + 1
-
-    # Header message
-    verse = next(v for v in VERSES if v["id"] == verse_id)
-    level_label = escape_md(LEVEL_LABELS[level])
-
-    if level == 3:
-        msg = (
-            f"📝 *Verse {current}/{len(VERSES)}: {escape_md(verse['ref'])}* \\| {level_label}\n\n"
-            "Type the entire verse from memory:"
-        )
-    else:
-        cloze, _ = make_cloze(verse["text"], level)
-        msg = (
-            f"📝 *Verse {current}/{len(VERSES)}: {escape_md(verse['ref'])}* \\| {level_label}\n\n"
-            f"{cloze}\n\n"
-            "Fill in the blanks \\— type the *complete verse*:"
-        )
-
-    ud["active_verse"] = verse_id  # track so handle_message knows which verse
-
-    if hasattr(update, "callback_query") and update.callback_query:
-        await update.callback_query.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
-    else:
-        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
+    prefix = escape_md(f"Verse {current}/{len(VERSES)}: ")
+    msg_target = (update.callback_query.message
+                  if hasattr(update, "callback_query") and update.callback_query
+                  else update.message)
+    await send_verse_prompt(msg_target, verse_id, level, prefix=f"*{prefix}*")
 
 
 # ─────────────────────────────────────────────
