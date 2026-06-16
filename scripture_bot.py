@@ -30,8 +30,8 @@ VERSES = [
         "id": 2,
         "ref":  "Matthew 4:4 (NIV)",
         "text": (
-            "Jesus answered, "It is written: Man shall not live on bread alone, "
-            "but on every word that comes from the mouth of God.""
+            "Jesus answered, 'It is written: Man shall not live on bread alone, "
+            "but on every word that comes from the mouth of God.'"
         ),
     },
     {
