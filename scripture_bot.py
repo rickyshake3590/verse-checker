@@ -145,10 +145,9 @@ def compare_verses(reference: str, attempt: str):
 
 def legend() -> str:
     return (
-        "Normal text \\= correct \n"
-        "~strikethrough~ \\= your wrong / extra word(s)\n"
-        "__underline__ \\= correct word(s)\n"
-        "*\\[word\\]* \\= missing word(s)"
+        "~strikethrough~ \\= your wrong / extra word or words\n"
+        "__underline__ \\= correct word or words\n"
+        "*\\[word\\]* \\= missing word or words"
     )
 
 
