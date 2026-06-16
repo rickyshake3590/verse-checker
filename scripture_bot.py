@@ -49,8 +49,8 @@ VERSES = [
         "id": 2,
         "ref":  "Matthew 4:4 (NIV)",
         "text": (
-            "Jesus answered, 'It is written: Man shall not live on bread alone, "
-            "but on every word that comes from the mouth of God.'"
+            'Jesus answered, "It is written: Man shall not live on bread alone, '
+            'but on every word that comes from the mouth of God."'
         ),
     },
     {
@@ -65,7 +65,7 @@ VERSES = [
         "id": 4,
         "ref":  "1 Corinthians 13:13 (NLT)",
         "text": (
-            "Three things will last forever—faith, hope, and love—"
+            "Three things will last forever\u2014faith, hope, and love\u2014"
             "and the greatest of these is love."
         ),
     },
@@ -86,22 +86,9 @@ VERSES = [
 #  Normalisation helpers
 # ─────────────────────────────────────────────
 def strip_punct_for_compare(word: str) -> str:
-    """
-    Remove ALL punctuation EXCEPT:
-      - hyphens/dashes inside words  (e.g. "criminal's" dash, em-dash in verse 4)
-      - quotes are normalised (both ' and " map to nothing — quotes OK either way)
-    Colons and semicolons are KEPT so "written:" vs "written" is a mismatch only
-    when the colon is structurally significant. Actually per spec, inverted commas
-    (quotes) are both fine; punctuation like comma/period ignored.
-    Strategy:
-      1. Normalise quote characters (', ", ', ", ‛, ‟) → removed
-      2. Keep hyphens and em-dashes
-      3. Remove all other punctuation (commas, periods, semicolons, colons, etc.)
-      4. Lowercase
-    """
     # Normalise all quote variants to empty
-    w = re.sub(r'["\u2018\u2019\u201c\u201d\u201a\u201b\u201e\u201f\']', "", word)
-    # Keep letters, digits, hyphens, em-dash (\u2014), en-dash (\u2013)
+    w = re.sub(r'["\'\u2018\u2019\u201c\u201d\u201a\u201b\u201e\u201f]', "", word)
+    # Keep letters, digits, hyphens, em-dash, en-dash
     w = re.sub(r"[^a-zA-Z0-9\-\u2013\u2014]", "", w)
     return w.lower()
 
@@ -109,23 +96,13 @@ def tokenise(text: str) -> list:
     return text.split()
 
 def escape_md(text: str) -> str:
-    """Escape special chars for Telegram MarkdownV2."""
     special = r"\_*[]()~`>#+-=|{}.!"
-    return re.sub(r"([" + re.escape(special) + r"])", r"\", text)
+    return re.sub(r"([" + re.escape(special) + r"])", r"\\\1", text)
 
 # ─────────────────────────────────────────────
 #  Diff engine
 # ─────────────────────────────────────────────
 def compare_verses(reference: str, attempt: str):
-    """
-    Returns (annotated_mkdv2, stats)
-
-    Legend:
-      Normal text     = correct
-      ~~strikethrough~~ = your wrong/extra word(s)   ← what YOU typed (wrong)
-      __underline__   = correct word                 ← what it SHOULD be
-      *[word]*        = missing word (you skipped it)
-    """
     ref_tokens = tokenise(reference)
     att_tokens = tokenise(attempt)
 
@@ -145,57 +122,52 @@ def compare_verses(reference: str, attempt: str):
             stats["correct"] += i2 - i1
 
         elif tag == "replace":
-            # Show: ~~your wrong words~~ then __correct words__
             wrong_words = " ".join(escape_md(w) for w in att_tokens[j1:j2])
             correct_words = " ".join(escape_md(w) for w in ref_tokens[i1:i2])
-            parts.append(f"~{wrong_words}~")       # strikethrough = what you typed
-            parts.append(f"__{correct_words}__")   # underline = correct word
+            parts.append(f"~{wrong_words}~")
+            parts.append(f"__{correct_words}__")
             stats["wrong"] += i2 - i1
 
         elif tag == "delete":
-            # Words you missed entirely
             for w in ref_tokens[i1:i2]:
-                parts.append(f"*\[{escape_md(w)}\]*")
+                parts.append(f"*\\[{escape_md(w)}\\]*")
             stats["missing"] += i2 - i1
 
         elif tag == "insert":
-            # Extra words you added — strikethrough only (no underline pair)
             extra_words = " ".join(escape_md(w) for w in att_tokens[j1:j2])
             parts.append(f"~{extra_words}~")
             stats["extra"] += j2 - j1
 
-    annotated = " ".join(parts)
-    return annotated, stats
+    return " ".join(parts), stats
 
 
 def legend() -> str:
     return (
-        "Normal text \= correct\n"
-        "~strikethrough~ \= your wrong / extra word\n"
-        "__underline__ \= correct word\n"
-        "*\[word\]* \= missing word"
+        "Normal text \\= correct\n"
+        "~strikethrough~ \\= your wrong / extra word\n"
+        "__underline__ \\= correct word\n"
+        "*\\[word\\]* \\= missing word"
     )
 
 
 def build_feedback(ref: str, attempt: str, verse_ref: str) -> str:
     annotated, stats = compare_verses(ref, attempt)
     pct = round(stats["correct"] / max(stats["total"], 1) * 100)
-    emoji = "🎉" if pct == 100 else "💪" if pct >= 70 else "📖"
+    emoji = "\U0001f389" if pct == 100 else "\U0001f4aa" if pct >= 70 else "\U0001f4d6"
 
     header = f"{emoji} *{escape_md(verse_ref)}*\n\n"
 
     score_line = (
         f"*Score:* {pct}% "
-        f"\({stats['correct']}/{stats['total']} words\)"
+        f"\\({stats['correct']}/{stats['total']} words\\)"
     )
     if stats["wrong"]:
-        score_line += f" \| {stats['wrong']} wrong"
+        score_line += f" \\| {stats['wrong']} wrong"
     if stats["missing"]:
-        score_line += f" \| {stats['missing']} missing"
+        score_line += f" \\| {stats['missing']} missing"
     if stats["extra"]:
-        score_line += f" \| {stats['extra']} extra"
+        score_line += f" \\| {stats['extra']} extra"
 
-    # One blank line between score and legend
     legend_block = f"*Legend:*\n{legend()}"
 
     return header + annotated + "\n\n" + score_line + "\n\n" + legend_block
@@ -208,7 +180,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.clear()
     await update.message.reply_text(
         "📖 *Scripture Memory Bot*\n\n"
-        "Use /quiz to pick a verse, or /all to go through all 5 in order\.",
+        "Use /quiz to pick a verse, or /all to go through all 5 in order\\.",
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
@@ -260,7 +232,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 for i in range(len(VERSES))
             )
             await update.message.reply_text(
-                f"🏁 *Quiz complete\!*\n\n{summary}\n\n*Average: {avg}%*",
+                f"🏁 *Quiz complete\\!*\n\n{summary}\n\n*Average: {avg}%*",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             ud.clear()
@@ -281,4 +253,35 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    await update.message.reply_text("I didn't understand that command.")
+    await update.message.reply_text(
+        "Use /quiz to pick a verse or /all to go through all 5\\.",
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+async def callback_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == "menu_quiz":
+        keyboard = [
+            [InlineKeyboardButton(v["ref"], callback_data=f"verse_{v['id']}")]
+            for v in VERSES
+        ]
+        await query.message.reply_text(
+            "Choose a verse:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+async def send_next_verse(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    ud = ctx.user_data
+    verse_id = ud["queue"][0]
+    verse = next(v for v in VERSES if v["id"] == verse_id)
+    remaining = len(ud["queue"])
+    current = len(VERSES) - remaining + 1
+    msg = (
+        f"📝 *Verse {current}/{len(VERSES)}: {escape_md(verse['ref'])}*\n\n"
+        "Type the verse from memory:"
+    )
+    if hasattr(update, "callback_query") and update.callback_query:
+        await update.callback_query.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
+    else:
+        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
