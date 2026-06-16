@@ -82,6 +82,44 @@ VERSES = [
             "in obedience to God and died a criminal's death on a cross."
         ),
     },
+    {
+        "id": 6,
+        "ref":  "John 10:27 (NKJV)",
+        "text": (
+            "My sheep hear My voice, and I know them, and they follow Me."
+        ),
+    },
+    {
+        "id": 7,
+        "ref":  "Psalms 119:72 (NIV)",
+        "text": (
+            "The law from your mouth is more precious to me than thousands of pieces of silver and gold."
+        ),
+    },
+    {
+        "id": 8,
+        "ref":  "John 15:16 (NIV)",
+        "text": (
+            "You did not choose Me, but I chose you and appointed you that you should go and bear fruit, "
+            "and that your fruit should remain, that whatever you ask the Father in My name He may give you."
+        ),
+    },
+    {
+        "id": 9,
+        "ref":  "2 Timothy 2:24 (NKJV)",
+        "text": (
+            "And a servant of the Lord must not quarrel but be gentle to all, able to teach, patient,"
+        ),
+    },
+    {
+        "id": 10,
+        "ref":  "Isaiah 26:3-4 (NKJV)",
+        "text": (
+            "You will keep him in perfect peace, Whose mind is stayed on You, "
+            "Because he trusts in You. Trust in the Lord forever, "
+            "For in Yah, the Lord, is everlasting strength."
+        ),
+    },
 ]
 
 # ─────────────────────────────────────────────
@@ -181,7 +219,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.clear()
     await update.message.reply_text(
         "📖 *Scripture Memory Bot*\n\n"
-        "Use /quiz to pick a verse, or /all to go through all 5 in order\\.",
+        "Use /quiz to pick a verse, or /all to go through all 10 in order\\.",
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
@@ -255,7 +293,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "Use /quiz to pick a verse or /all to go through all 5\\.",
+        "Use /quiz to pick a verse or /all to go through all 10\\.",
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
