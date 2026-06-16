@@ -1,0 +1,1 @@
+worker: python scripture_bot.py
