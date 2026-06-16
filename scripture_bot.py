@@ -302,3 +302,10 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     logger.info("Starting polling...")
     app.run_polling()
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        logger.exception(f"Fatal error: {e}")
+        sys.exit(1)
