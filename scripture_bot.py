@@ -5,6 +5,7 @@ import sys
 import difflib
 import logging
 
+# ── Logging setup (shows in Railway logs) ──────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 logger.info("=== Scripture Bot starting ===")
 logger.info(f"Python version: {sys.version}")
 
+# ── Validate token BEFORE importing telegram ──────────────────────────────
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 if not TOKEN:
     logger.error("TELEGRAM_BOT_TOKEN is not set or is empty. Exiting.")
@@ -285,3 +287,18 @@ async def send_next_verse(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
     else:
         await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
+
+# ─────────────────────────────────────────────
+#  Main
+# ─────────────────────────────────────────────
+def main():
+    logger.info("Building application...")
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start",  cmd_start))
+    app.add_handler(CommandHandler("quiz",   cmd_quiz))
+    app.add_handler(CommandHandler("all",    cmd_all))
+    app.add_handler(CallbackQueryHandler(callback_verse, pattern=r"^verse_\d+$"))
+    app.add_handler(CallbackQueryHandler(callback_menu, pattern=r"^menu_"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    logger.info("Starting polling...")
+    app.run_polling()
