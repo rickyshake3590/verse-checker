@@ -291,4 +291,8 @@ async def send_next_verse(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     msg = (
         f"📝 *Verse {current}/{total}: {escape_md(verse['ref'])}*\n\n"
-        "Type the v
+        "Type the verse from memory and send it back to me."
+    )
+    ud["active_verse"] = verse_id
+    message = update.message if update.message else update.callback_query.message
+    await message.reply_text(msg, parse_mode=ParseMode.MARKDOWN_V2)
