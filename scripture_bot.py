@@ -322,7 +322,7 @@ async def send_verse_prompt(message, verse_id: int, level: int, prefix: str = ""
         )
     else:
         cloze, _ = make_cloze(verse["text"], level)
-        body = "Fill in the blanks \\ type the *complete verse*:"
+        body = "Type out the *complete verse* and fill in the blanks:"
         await message.reply_text(
             f"{prefix}📝 *{ref}* \\| {level_label}\n\n{cloze}\n\n{body}",
             parse_mode=ParseMode.MARKDOWN_V2,
