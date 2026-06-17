@@ -231,7 +231,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.clear()
     await update.message.reply_text(
         "📖 *Scripture Memory Bot*\n\n"
-        "Use /quiz to pick a verse, or /all to go through all 10 in order\\.\n\n"
+        "Use /quiz to pick a verse, or /all to go through all 8 in order\\.\n\n"
         "You will be asked to choose a difficulty level each time\\.",
         parse_mode=ParseMode.MARKDOWN_V2,
     )
@@ -361,7 +361,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "Use /quiz to pick a verse or /all to go through all 10\\.",
+        "Use /quiz to pick a verse or /all to go through all 8\\.",
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
