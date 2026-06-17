@@ -100,23 +100,7 @@ VERSES = [
             "You did not choose Me, but I chose you and appointed you that you should go and bear fruit, "
             "and that your fruit should remain, that whatever you ask the Father in My name He may give you."
         ),
-    },
-    {
-        "id": 9,
-        "ref": "2 Timothy 2:24 (NKJV)",
-        "text": (
-            "And a servant of the Lord must not quarrel but be gentle to all, able to teach, patient,"
-        ),
-    },
-    {
-        "id": 10,
-        "ref": "Isaiah 26:3-4 (NKJV)",
-        "text": (
-            "You will keep him in perfect peace, Whose mind is stayed on You, "
-            "Because he trusts in You. Trust in the Lord forever, "
-            "For in Yah, the Lord, is everlasting strength."
-        ),
-    },
+    }
 ]
 
 # ─────────────────────────────────────────────
