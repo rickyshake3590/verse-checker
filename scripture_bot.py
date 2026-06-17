@@ -314,7 +314,6 @@ async def send_verse_prompt(message, verse_id: int, level: int, prefix: str = ""
 
 async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text.strip()
-    logger.info(f"Message from user {update.effective_user.id} (@{update.effective_user.username})")
     ud = ctx.user_data
 
     if "queue" in ud and ud["queue"]:
